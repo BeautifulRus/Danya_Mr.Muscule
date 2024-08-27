@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="Muscule:jar2">
+    <output-path>$PROJECT_DIR$/out/artifacts/Muscule_ver0.1</output-path>
+    <root id="archive" name="Muscule.jar">
+      <element id="module-output" name="Muscule" />
+    </root>
+  </artifact>
+</component>
