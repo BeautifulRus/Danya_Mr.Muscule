@@ -74,11 +74,19 @@ class Workout {
     }
 
     public String getMuscleGroups() {
-        return String.join("\n", muscleGroups.toString());
+        StringBuilder sb = new StringBuilder();
+        for (MuscleGroup group : muscleGroups) {
+            sb.append(group.toString()).append("\n"); // Добавляем разрыв строки
+        }
+        return sb.toString().trim(); // Удаляем лишний символ переноса в конце
     }
 
     public String getExercises() {
-        return String.join("\n", exercises.toString());
+        StringBuilder sb = new StringBuilder();
+        for (Exercise ex : exercises) {
+            sb.append(ex.toString()).append("\n"); // Добавляем разрыв строки
+        }
+        return sb.toString().trim(); // Удаляем лишний символ переноса в конце
     }
 
     public List<Exercise> getExercisesList() {
