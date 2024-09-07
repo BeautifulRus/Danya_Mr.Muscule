@@ -1,30 +1,49 @@
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 
-/** Класс, куда записываются упражнения и их вес*/
 class Exercise {
     String name;
-    int weight;
-    public Exercise(String name, int weight) {
+    double standardWeight;
+    double currentWeight;
+
+    public Exercise(String name, double weight) {
         this.name = name;
-        this.weight = weight;
+        this.standardWeight = weight;
+        this.currentWeight = weight;
     }
-    public void setWeight(int weight) {
-        this.weight = weight;
+
+    public void setWeight(double weight) {
+        this.currentWeight = weight;
+    }
+
+    public double getStandardWeight() {
+        return standardWeight;
+    }
+
+    public void increaseWeight() {
+        standardWeight *= 1.05;
+    }
+
+    public double getReducedWeight() {
+        return standardWeight * 0.7;
+    }
+
+    public void resetWeight() {
+        currentWeight = standardWeight;
     }
 
     @Override
     public String toString() {
-        return name + " (Вес: " + weight + " кг)";
+        return name + " (Стандартный вес: " + String.format("%.2f", standardWeight) + " кг, Текущий вес: " + String.format("%.2f", currentWeight) + " кг)";
     }
 }
 
-/** Класс, куда записываются мышцы, необходимое количество подходов, и их выполненное кол-во*/
 class MuscleGroup {
     String name;
     int weeklySets;
@@ -36,253 +55,330 @@ class MuscleGroup {
         this.completedSets = 0;
     }
 
+    public void addCompletedSet() {
+        completedSets++;
+    }
+
+    public void resetCompletedSets() {
+        completedSets = 0;
+    }
+
     @Override
     public String toString() {
         return name + " (Подходы в неделю: " + weeklySets + ", Выполнено: " + completedSets + ")";
     }
-
-
-
-
-    public void addCompletedSet() {
-        completedSets++;
-    }
-    public void subtractCompletedSet() {
-        completedSets--;
-    }
 }
 
-/**
- * Все манипуляции через интерфес с данными, осуществляем через этот класс
- */
 class Workout {
-    private ArrayList<MuscleGroup> muscleGroups;
-    private ArrayList<Exercise> exercises;
-
-    public ArrayList<Exercise> getExercisesList() {
-        return exercises;
-    }
-
-    public Workout() {
-        muscleGroups = new ArrayList<>();
-        exercises = new ArrayList<>();
-    }
+    private List<MuscleGroup> muscleGroups = new ArrayList<>();
+    private List<Exercise> exercises = new ArrayList<>();
 
     public void addMuscleGroup(String name, int sets) {
         muscleGroups.add(new MuscleGroup(name, sets));
+        updateMuscleGroupsFile(); // Обновляем файл после добавления группы
     }
 
-    public void addExercise(String name, int weight) {
+    public void addExercise(String name, double weight) {
         exercises.add(new Exercise(name, weight));
+        updateExercisesFile(); // Обновляем файл после добавления упражнения
     }
 
-    public void setExerciseWeight(String name, int weight) {
+    public void setExerciseWeight(String name, double weight) {
         for (Exercise ex : exercises) {
             if (ex.name.equals(name)) {
                 ex.setWeight(weight);
-                return;
-
+                break;
             }
+        }
+    }
+
+    public void addSet(int index) {
+        if (index >= 0 && index < muscleGroups.size()) {
+            muscleGroups.get(index).addCompletedSet();
+            updateMuscleGroupsFile();
+            checkAndUpdateWeights();
+        }
+    }
+
+    private void checkAndUpdateWeights() {
+        if (muscleGroups.stream().allMatch(mg -> mg.completedSets >= mg.weeklySets)) {
+            increaseStandardWeights();
+            resetCompletedSets();
+        }
+    }
+
+    public void updateWeights(int weekCount) {
+        for (Exercise ex : exercises) {
+            if (weekCount % 4 < 2) {
+                ex.setWeight(ex.getReducedWeight());
+            } else {
+                ex.resetWeight();
+            }
+        }
+    }
+
+    public void increaseStandardWeights() {
+        for (Exercise ex : exercises) {
+            ex.increaseWeight();
+        }
+        updateExercisesFile();
+    }
+
+    public void resetCompletedSets() {
+        for (MuscleGroup group : muscleGroups) {
+            group.resetCompletedSets();
         }
     }
 
     public String getMuscleGroups() {
         StringBuilder sb = new StringBuilder();
-        for (MuscleGroup mg : muscleGroups) {
-            sb.append(mg).append("\n");
+        for (MuscleGroup group : muscleGroups) {
+            sb.append(group.toString()).append("\n");
         }
-        return sb.toString();
+        return sb.toString().trim();
     }
 
     public String getExercises() {
         StringBuilder sb = new StringBuilder();
         for (Exercise ex : exercises) {
-            sb.append(ex).append("\n");
+            sb.append(ex.toString()).append("\n");
         }
-        return sb.toString();
+        return sb.toString().trim();
     }
 
+    public void updateMuscleGroupsFile() {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter("muscle_groups.txt"))) {
+            for (MuscleGroup group : muscleGroups) {
+                bw.write(group.name + ":" + group.weeklySets + ":" + group.completedSets);
+                bw.newLine();
+            }
+        } catch (IOException e) {
+            showError("Ошибка при сохранении мышечных групп: " + e.getMessage());
+        }
+    }
 
-    /* TODO Переделать так, чтобы метод добавлял подход
-        к мышечной группе по нажатию кнопки
-        рядом с наименованием этой мышечной группы */
+    public void loadMuscleGroupsFromFile(String filename) {
+        try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] parts = line.split(":");
+                MuscleGroup group = new MuscleGroup(parts[0], Integer.parseInt(parts[1]));
+                group.completedSets = Integer.parseInt(parts[2]);
+                muscleGroups.add(group);
+            }
+        } catch (IOException e) {
+            showError("Ошибка при загрузке мышечных групп: " + e.getMessage());
+        } catch (NumberFormatException e) {
+            showError("Ошибка формата данных в файле мышечных групп: " + e.getMessage());
+        }
+    }
 
-    /**
-     * Добавляет подход к выбранной мышечной группе
-     * @param indexMuscleGroup принимает индекс мышечной группы: <br>
-     * [0] Грудные мышцы <br>
-     * [1] Спина <br>
-     * [2] Ноги <br>
-     * [3] Пресс <br>
-     * [4] Трицепс <br>
-     * [5] Бицепс <br>
-     * [6] Плечи <br>
-     * [7] Шея <br>
-     */
-    public void addSet (int indexMuscleGroup) {
+    public void loadExercisesFromFile(String filename) {
+        try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] parts = line.split(":");
+                addExercise(parts[0], Double.parseDouble(parts[1].replace(",", ".")));
+            }
+        } catch (IOException ex) {
+            showError("Ошибка при загрузке упражнений: " + ex.getMessage());
+        } catch (NumberFormatException ex) {
+            showError("Ошибка формата данных в файле упражнений: " + ex.getMessage());
+        }
+    }
 
+    private void showError(String message) {
+        JOptionPane.showMessageDialog(null, message, "Ошибка", JOptionPane.ERROR_MESSAGE);
+        System.err.println(message);
+    }
 
-        // TODO updateDataOnScreen
-
-
+    public void updateExercisesFile() {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter("exercises.txt"))) {
+            for (Exercise ex : exercises) {
+                bw.write(ex.name + ":" + String.format("%.2f", ex.standardWeight).replace(".", ","));
+                bw.newLine();
+            }
+        } catch (IOException e) {
+            showError("Ошибка при сохранении упражнений: " + e.getMessage());
+        }
     }
 }
 
-/** Интерфейс программы */
 public class WorkoutApp extends JFrame {
     private Workout workout;
     private JTextArea muscleGroupArea;
     private JTextArea exerciseArea;
     private JTextField muscleGroupInput;
+    private JTextField exerciseNameInput;
+    private JTextField exerciseWeightInput;
+    private JTabbedPane tabbedPane;
+    private Timer timer;
+    private long timerStart;
+    private int weekCount = 0;
 
     public WorkoutApp() {
         workout = new Workout();
+        workout.loadMuscleGroupsFromFile("muscle_groups.txt");
+        workout.loadExercisesFromFile("exercises.txt");
+        timerStart = loadLastRunTime();
 
-        // Инициализация мышечных групп и упражнений
-        loadMuscleGroupsFromFile();
-        loadExercisesFromFile();
+        initializeUI();
+        scheduleWeeklyWeightUpdate();
+    }
 
-        // Настройка UI
-        setTitle("Deu sEX machina!");
-        setSize(600, 400);
+    private void initializeUI() {
+        setTitle("Workout Tracker");
+        setSize(600, 500);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        muscleGroupArea = new JTextArea();
-        exerciseArea = new JTextArea();
-        muscleGroupInput = new JTextField();
+        tabbedPane = new JTabbedPane();
 
+        JPanel mainTab = new JPanel();
+        mainTab.setLayout(new BorderLayout());
+
+        muscleGroupArea = new JTextArea(10, 30);
         JButton addSetButton = new JButton("Добавить подход");
+        muscleGroupInput = new JTextField(5);
 
-        addSetButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                String input = muscleGroupInput.getText();
-                workout.addSet(Integer.parseInt(input));
-                JOptionPane.showMessageDialog(null, "Добавлен подход к " + input + ".");
+        addSetButton.addActionListener(e -> {
+            try {
+                int index = Integer.parseInt(muscleGroupInput.getText());
+                workout.addSet(index);
+                JOptionPane.showMessageDialog(this, "Добавлен подход к группе " + index + ".");
                 muscleGroupInput.setText("");
-                muscleGroupArea.setText(workout.getMuscleGroups());
+                updateMuscleGroupArea();
+            } catch (NumberFormatException | IndexOutOfBoundsException ex) {
+                JOptionPane.showMessageDialog(this, "Ошибка: " + ex.getMessage());
             }
         });
 
-        // Добавление заголовка первой колонки
-        JPanel panel = new JPanel(new GridLayout(1, 1));
-        panel.add(new JLabel("Необходимо выполнить"));
+        exerciseArea = new JTextArea(10, 30);
+        updateExerciseArea();
 
-        add(panel, BorderLayout.NORTH);
-        add(new JScrollPane(muscleGroupArea), BorderLayout.WEST);
-        add(new JScrollPane(exerciseArea), BorderLayout.CENTER);
-        add(muscleGroupInput, BorderLayout.SOUTH);
-        add(addSetButton, BorderLayout.EAST);
+        JPanel inputPanel = new JPanel();
+        inputPanel.add(new JLabel("Индекс мышечной группы:"));
+        inputPanel.add(muscleGroupInput);
+        inputPanel.add(addSetButton);
 
-        // Заполнение текстовых областей
-        muscleGroupArea.setText(workout.getMuscleGroups());
-        exerciseArea.setText(workout.getExercises());
+        mainTab.add(inputPanel, BorderLayout.NORTH);
+        mainTab.add(new JScrollPane(muscleGroupArea), BorderLayout.WEST);
+        mainTab.add(new JScrollPane(exerciseArea), BorderLayout.EAST);
+
+        tabbedPane.addTab("Тренировки", mainTab);
+
+        JPanel editTab = new JPanel();
+        editTab.setLayout(new BorderLayout());
+
+        exerciseNameInput = new JTextField(10);
+        exerciseWeightInput = new JTextField(5);
+        JButton addExerciseButton = new JButton("Добавить упражнение");
+        JButton addMuscleGroupButton = new JButton("Добавить мышечную группу");
+        JTextField newMuscleGroupNameInput = new JTextField(10);
+        JTextField newMuscleGroupSetsInput = new JTextField(5);
+
+        addExerciseButton.addActionListener(e -> {
+            try {
+                String name = exerciseNameInput.getText();
+                double weight = Double.parseDouble(exerciseWeightInput.getText().replace(",", "."));
+                workout.addExercise(name, weight);
+                exerciseNameInput.setText("");
+                exerciseWeightInput.setText("");
+                updateExerciseArea();
+                JOptionPane.showMessageDialog(this, "Упражнение добавлено.");
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Ошибка: Введите корректный вес.");
+            }
+        });
+
+        addMuscleGroupButton.addActionListener(e -> {
+            try {
+                String name = newMuscleGroupNameInput.getText();
+                int sets = Integer.parseInt(newMuscleGroupSetsInput.getText());
+                workout.addMuscleGroup(name, sets);
+                newMuscleGroupNameInput.setText("");
+                newMuscleGroupSetsInput.setText("");
+                JOptionPane.showMessageDialog(this, "Мышечная группа добавлена.");
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Ошибка: Введите корректное число подходов.");
+            }
+        });
+
+        JPanel exercisePanel = new JPanel();
+        exercisePanel.add(new JLabel("Имя упражнения:"));
+        exercisePanel.add(exerciseNameInput);
+        exercisePanel.add(new JLabel("Вес:"));
+        exercisePanel.add(exerciseWeightInput);
+        exercisePanel.add(addExerciseButton);
+
+        JPanel muscleGroupPanel = new JPanel();
+        muscleGroupPanel.add(new JLabel("Имя новой группы:"));
+        muscleGroupPanel.add(newMuscleGroupNameInput);
+        muscleGroupPanel.add(new JLabel("Подходы:"));
+        muscleGroupPanel.add(newMuscleGroupSetsInput);
+        muscleGroupPanel.add(addMuscleGroupButton);
+
+        editTab.add(exercisePanel, BorderLayout.NORTH);
+        editTab.add(muscleGroupPanel, BorderLayout.CENTER);
+
+        tabbedPane.addTab("Редактирование", editTab);
+
+        add(tabbedPane, BorderLayout.CENTER);
+
+        updateMuscleGroupArea();
 
         setVisible(true);
-
-        // Загружаем веса для упражнений
-        loadWeights();
-
-
-
     }
 
-
-    //todo у меня здесь идёт 4 метода, некоторые из которых лишние. надо убрать лишние
-    /**
-     * Загружает мышечные группы из файла.
-     *
-     */
-    private void loadMuscleGroupsFromFile() {
-            try (BufferedReader br = new BufferedReader(new FileReader("muscle_groups.txt"))) {
-                String line;
-//                List<Integer> sets = new ArrayList<>();
-                while ((line = br.readLine()) != null) {
-                    String[] parts = line.split(":");
-                    workout.addMuscleGroup(parts[0],Integer.parseInt(parts[1]));
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+    private void updateMuscleGroupArea() {
+        muscleGroupArea.setText(workout.getMuscleGroups());
     }
 
-
-    private void loadExercisesFromFile() {
-        try (BufferedReader br = new BufferedReader(new FileReader("exercises.txt"))) {
-            String line;
-//            List<Integer> sets = new ArrayList<>();
-            while ((line = br.readLine()) != null) {
-                String[] parts = line.split(":");
-                workout.addExercise(parts[0],Integer.parseInt(parts[1]));
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-
-
-
-
-    /**
-     * Загрузка данных о весе в упражнениях
-     * <br><br>
-     *  Если файл существует - достаём данные из файла <br>
-     *  Если файла нет - запрашиваем данные у пользователя, создаём файл, и записываем в файл эти данные
-     */
-
-    private void loadWeights() {
-        File file = new File("exercises.txt");
-
-        if (file.exists()) {
-            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    String[] parts = line.split(":");
-                    if (parts.length == 2) {
-                        String exerciseName = parts[0];
-                        int weight = Integer.parseInt(parts[1].trim());
-                        workout.setExerciseWeight(exerciseName, weight);
-                    }
-                }
-            } catch (IOException e) {
-                JOptionPane.showMessageDialog(this, "Ошибка при загрузке данных веса в упражнениях: " + e.getMessage());
-            }
-        } else {
-            for (Exercise exercise : workout.getExercisesList()) {
-                String input = JOptionPane.showInputDialog("Введите вес в кг для упражнения \"" + exercise.name + "\" (при 8 повторениях):");
-                try {
-                    if (input != null) {
-                        int weight = Integer.parseInt(input);
-                        workout.setExerciseWeight(exercise.name, weight);
-                    }
-                } catch (NumberFormatException e) {
-                    JOptionPane.showMessageDialog(this, "Введите корректное число.");
-                }
-            }
-           // createWeightFile();
-        }
-
-        // Обновляем отображение упражнений с учетом введенного веса
+    private void updateExerciseArea() {
         exerciseArea.setText(workout.getExercises());
     }
-/*
-    private void createWeightFile() {
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter("weight.txt"))) {
-            for (Exercise exercise : workout.getExercisesList()) {
-                writer.write(exercise.name + ": " + exercise.weight);
-                writer.newLine();
+
+    private void scheduleWeeklyWeightUpdate() {
+        long currentTime = System.currentTimeMillis();
+        long elapsedTime = currentTime - timerStart;
+
+        long timeToNextUpdate = (7 * 24 * 60 * 60 * 1000) - (elapsedTime % (7 * 24 * 60 * 60 * 1000));
+
+        timer = new Timer();
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                weekCount++;
+                workout.updateWeights(weekCount);
+                workout.resetCompletedSets();
+                workout.updateExercisesFile(); // Обновляем файл после последнего обновления весов
+                saveLastRunTime(System.currentTimeMillis());
+                SwingUtilities.invokeLater(() -> {
+                    JOptionPane.showMessageDialog(WorkoutApp.this, "Вес всех упражнений обновлён в связи с периодизацией нагрузки.");
+                    updateExerciseArea();
+                    updateMuscleGroupArea();
+                });
             }
-        } catch (IOException e) {
-            JOptionPane.showMessageDialog(this, "Ошибка при сохранении данных о весе в упражнениях: " + e.getMessage());
+        }, timeToNextUpdate, 1000 * 60 * 60 * 24 * 7);
+    }
+
+    private long loadLastRunTime() {
+        try (BufferedReader br = new BufferedReader(new FileReader("timer.txt"))) {
+            return Long.parseLong(br.readLine());
+        } catch (IOException | NumberFormatException e) {
+            return System.currentTimeMillis();
         }
-    }*/
-/* todo приложение сейчас, при неправильных данных файлов упражнений и мышечных групп
-    не запускается, и даже не отображает ошибку. надо хотя бы ошибку сделать
- */
+    }
+
+    private void saveLastRunTime(long time) {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter("timer.txt"))) {
+            bw.write(String.valueOf(time));
+        } catch (IOException e) {
+            System.err.println("Ошибка при сохранении таймера: " + e.getMessage());
+        }
+    }
+
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new WorkoutApp());
+        SwingUtilities.invokeLater(WorkoutApp::new);
     }
 }
-
